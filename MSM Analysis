@@ -1,0 +1,80 @@
+import numpy as np
+import glob
+import matplotlib.pyplot as plt
+import pyemma
+from pyemma.util.contexts import settings
+import os,sys
+
+### COLLECTION OF FEATURIZED DATA ###
+### PLEASE ADJUST ACCORDING TO YOUR DATA, PUT INTO LIST OF ARRAYS ###
+com=[]
+t=1
+
+trajectory_list=sorted(glob.glob('../../*'.format(t)))
+
+for nama_file in (trajectory_list):
+    column=[]
+    with open(file_name) as file:
+        for line in file:
+            if (line.split()[-1]!='du'):
+                column.append(float(line.split()[-1]))
+    if (len(column) == 3000):
+        column=np.array(column)
+        com.append(column)
+    
+data=com
+com=np.array(com)
+com_ravel=com.ravel()
+com_reshape=com_ravel.reshape((147*30,100))
+com_reshape_T=np.transpose(com_reshape)
+data=np.transpose(com_reshape)
+data.shape
+
+data_list=[]
+
+for i in range(data.shape[1]):
+    data_list.append(data[:,i])
+    
+data_list
+
+### DATA CLUSTERING WITH KMEANS++ ###
+nclus=50
+cluster=pyemma.coordinates.cluster_kmeans(data_list,k=nclus,max_iter=1000,init_strategy='kmeans++',n_jobs=10,metric='euclidean')
+dtrajs=cluster.get_output()
+cluster_dtrajs=cluster.dtrajs
+
+np.save("file_name_clustered.npy", cluster.clustercenters)
+np.save("file_name_clustered.npy", np.array(dtrajs))
+
+### DATA VALIDATION ###
+### PLOTTING IMPLIED TIME SCALES VS LAG TIME ###
+nclus=50
+its=pyemma.msm.its(cluster_dtrajs, lags=[*range(1,51)], nits=nclus, weights='empirical', errors=None)
+
+fig, ax=plt.subplots()
+ax=pyemma.plots.plot_implied_timescales(its, units='ps', dt=1)
+
+### CALCULATION OF FREE ENERGY DIFFERENCE ###
+### FREE ENERGY LANDSCAPE BETWEEN THE BOUND STATE AND THE UNBOUND STATE OF CRL/INHIBITOR COMPLEX ###
+centers=cluster.clustercenters
+cluster_dtrajs=cluster.dtrajs
+
+nclus=len(centers)
+lag=nclus
+estimate_msm=pyemma.msm.estimate_markov_model(cluster_dtrajs, lag=lag)
+
+kT=2.479*298.15/298 
+y_gibbs=[-np.log(estimate_msm.pi[x])*kT*0.239006 for x in range(0, nclus)] #kcal/mol
+x_distance=[centers[x] for x in range(0, nclus)]
+
+data=np.array([[x_dist[i][0], y_gibbs[i]] for i in range(len(x_distance))])
+data[:,1] -= np.min(data[:,1])
+data=data[np.argsort(data[:,0])]
+np.savetxt('give_name.txt', data)
+
+fig, ax=plt.subplots(figsize=(15.0, 10.0))
+ax.plot(data[:,0], data[:,1], color='blue', marker=".", markersize=20)
+plt.rcParams.update({'font.size': 14})
+
+ax.set_xlabel("$D_{COM}$ [Angstrom]", size='large', weight='semibold')
+ax.set_ylabel("d(G) [kcal/mol]", size='large', weight='semibold')
